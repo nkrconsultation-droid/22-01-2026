@@ -74,7 +74,7 @@ public class SimulationService : IDisposable
 
     private void LogMessage(string category, string message)
     {
-        LogMessage(category, message);
+        OnEventLogged?.Invoke(category, message);
         OnLogMessage?.Invoke($"[{category}] {message}");
     }
 
