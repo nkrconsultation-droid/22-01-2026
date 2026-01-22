@@ -511,16 +511,83 @@ public class SimulationService : IDisposable
     private void UpdatePID(ControlLoop loop, double pv, double dt)
     {
         loop.PV = pv;
-        if (loop.Mode != "AUTO") return;
+
+        // Record history for trend display (every update)
+        if (SimTime - _lastLogTime >= 0.5 || loop.PVHistory.Count == 0)
+        {
+            loop.RecordHistory();
+        }
+
+        // Manual mode - just track for bumpless transfer
+        if (loop.Mode != "AUTO")
+        {
+            loop.LastOP = loop.OP;
+            loop.LastError = loop.SP - pv;
+            // Reset integral for bumpless transfer when switching to AUTO
+            loop.Integral = (loop.OP - 50) / Math.Max(loop.Kp, 0.01);
+            return;
+        }
 
         var err = loop.SP - pv;
-        if (Math.Abs(err) < 0.5) return;
 
-        var newInt = Clamp(loop.Integral + err * dt, -50 / Math.Max(loop.Ki, 0.01), 50 / Math.Max(loop.Ki, 0.01));
-        var op = Clamp(50 + loop.Kp * err + loop.Ki * newInt + loop.Kd * (err - loop.LastError) / Math.Max(dt, 0.01), 0, 100);
+        // Apply deadband - don't adjust if error is small
+        if (Math.Abs(err) <= loop.Deadband)
+        {
+            loop.LastError = err;
+            return;
+        }
+
+        // ===== DERIVATIVE TERM with filtering =====
+        // Use low-pass filter to reduce noise: D_filtered = alpha * D_new + (1-alpha) * D_old
+        var rawDerivative = (err - loop.LastError) / Math.Max(dt, 0.001);
+        loop.DerivativeFilter = loop.FilterCoeff * rawDerivative + (1 - loop.FilterCoeff) * loop.DerivativeFilter;
+
+        // ===== PROPORTIONAL TERM =====
+        var pTerm = loop.Kp * err;
+
+        // ===== INTEGRAL TERM with anti-windup =====
+        // Only integrate if output is not saturated OR error would reduce saturation
+        var proposedOp = 50 + pTerm + loop.Ki * loop.Integral + loop.Kd * loop.DerivativeFilter;
+        var wouldSaturateHigh = proposedOp > loop.OutputMax && err > 0;
+        var wouldSaturateLow = proposedOp < loop.OutputMin && err < 0;
+
+        if (!wouldSaturateHigh && !wouldSaturateLow)
+        {
+            // Safe to integrate
+            loop.Integral += err * dt;
+        }
+        // Back-calculation anti-windup: reduce integral when saturated
+        else if (wouldSaturateHigh)
+        {
+            loop.Integral = Math.Max(loop.Integral - Math.Abs(err) * dt * 0.5, 0);
+        }
+        else if (wouldSaturateLow)
+        {
+            loop.Integral = Math.Min(loop.Integral + Math.Abs(err) * dt * 0.5, 0);
+        }
+
+        // Clamp integral to prevent excessive windup
+        var maxIntegral = 50 / Math.Max(loop.Ki, 0.001);
+        loop.Integral = Clamp(loop.Integral, -maxIntegral, maxIntegral);
+
+        // ===== CALCULATE OUTPUT =====
+        var iTerm = loop.Ki * loop.Integral;
+        var dTerm = loop.Kd * loop.DerivativeFilter;
+        var op = 50 + pTerm + iTerm + dTerm;
+
+        // ===== RATE LIMITING =====
+        var maxChange = loop.RateLimit * dt;
+        var change = op - loop.LastOP;
+        if (Math.Abs(change) > maxChange)
+        {
+            op = loop.LastOP + Math.Sign(change) * maxChange;
+        }
+
+        // ===== OUTPUT CLAMPING =====
+        op = Clamp(op, loop.OutputMin, loop.OutputMax);
 
         loop.OP = op;
-        loop.Integral = newInt;
+        loop.LastOP = op;
         loop.LastError = err;
     }
 

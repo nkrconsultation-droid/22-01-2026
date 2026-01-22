@@ -1,0 +1,80 @@
+@namespace WaterTreatmentSimulator.Shared
+
+<div class="trend-chart @CssClass" title="@Title">
+    <svg width="100%" height="@Height" viewBox="0 0 @Width @Height" preserveAspectRatio="none">
+        @if (Data.Any())
+        {
+            <!-- Grid lines -->
+            <line x1="0" y1="@(Height/2)" x2="@Width" y2="@(Height/2)" stroke="#333" stroke-dasharray="2,2" />
+
+            <!-- Main data line -->
+            <polyline
+                fill="none"
+                stroke="@Color"
+                stroke-width="1.5"
+                points="@GetPoints(Data)" />
+
+            @if (SecondaryData.Any())
+            {
+                <!-- Secondary data line (e.g., setpoint) -->
+                <polyline
+                    fill="none"
+                    stroke="@SecondaryColor"
+                    stroke-width="1"
+                    stroke-dasharray="3,2"
+                    points="@GetPoints(SecondaryData)" />
+            }
+
+            <!-- Current value marker -->
+            <circle cx="@(Width - 2)" cy="@GetY(Data.Last())" r="3" fill="@Color" />
+        }
+    </svg>
+    @if (ShowLabel)
+    {
+        <div class="trend-label">@Label</div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<double> Data { get; set; } = new();
+    [Parameter] public List<double> SecondaryData { get; set; } = new();
+    [Parameter] public string Color { get; set; } = "#00ff88";
+    [Parameter] public string SecondaryColor { get; set; } = "#ffaa00";
+    [Parameter] public int Width { get; set; } = 120;
+    [Parameter] public int Height { get; set; } = 40;
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public bool ShowLabel { get; set; } = false;
+    [Parameter] public string CssClass { get; set; } = "";
+    [Parameter] public double? MinValue { get; set; }
+    [Parameter] public double? MaxValue { get; set; }
+
+    private double GetMinValue() => MinValue ?? (Data.Any() ? Data.Min() * 0.9 : 0);
+    private double GetMaxValue() => MaxValue ?? (Data.Any() ? Data.Max() * 1.1 : 100);
+
+    private double GetY(double value)
+    {
+        var min = GetMinValue();
+        var max = GetMaxValue();
+        var range = max - min;
+        if (range == 0) return Height / 2;
+        return Height - ((value - min) / range * Height);
+    }
+
+    private string GetPoints(List<double> data)
+    {
+        if (!data.Any()) return "";
+
+        var points = new List<string>();
+        var step = (double)Width / Math.Max(data.Count - 1, 1);
+
+        for (int i = 0; i < data.Count; i++)
+        {
+            var x = i * step;
+            var y = GetY(data[i]);
+            points.Add($"{x:F1},{y:F1}");
+        }
+
+        return string.Join(" ", points);
+    }
+}

@@ -1336,3 +1336,274 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* ================================================
+   ENHANCED UX STYLES
+   ================================================ */
+
+/* Pulse dot for running indicator */
+.pulse-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    margin-right: 6px;
+    animation: pulse-animation 1.5s infinite;
+}
+
+@keyframes pulse-animation {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.3);
+        opacity: 0.7;
+    }
+}
+
+/* Panel hints */
+.panel-hint {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-weight: normal;
+    margin-left: 8px;
+}
+
+/* Selected indicator on tanks */
+.selected-indicator {
+    color: var(--accent-green);
+    margin-left: 5px;
+    font-size: 0.9rem;
+}
+
+/* Processing overlay on tanks */
+.processing-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 204, 0, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.processing-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid transparent;
+    border-top-color: var(--accent-yellow);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+/* Tank status colors */
+.tank-status.ready {
+    color: var(--accent-green);
+}
+
+.tank-status.selected {
+    color: var(--accent-blue);
+}
+
+.tank-status.processing {
+    color: var(--accent-yellow);
+}
+
+.tank-status.empty {
+    color: var(--accent-red);
+}
+
+.tank-status.settling {
+    color: var(--accent-orange);
+}
+
+/* Batch start section */
+.batch-start-section {
+    margin-top: 15px;
+    padding: 15px;
+    background: var(--bg-panel);
+    border-radius: 6px;
+    text-align: center;
+}
+
+.btn-primary {
+    background: var(--accent-blue);
+    color: #000;
+}
+
+.btn-large {
+    padding: 12px 24px;
+    font-size: 1rem;
+}
+
+/* Control faceplate enhancements */
+.control-faceplate.saturated {
+    border-color: var(--accent-red);
+    box-shadow: 0 0 8px rgba(255, 68, 68, 0.3);
+}
+
+.control-faceplate.stable {
+    border-color: var(--accent-green);
+}
+
+/* Loop status indicator */
+.loop-status {
+    font-size: 0.65rem;
+    padding: 2px 5px;
+    border-radius: 2px;
+    font-weight: bold;
+    margin: 0 5px;
+}
+
+.loop-status.ok {
+    background: var(--accent-green);
+    color: #000;
+}
+
+.loop-status.sat {
+    background: var(--accent-red);
+    color: #fff;
+}
+
+.loop-status.act {
+    background: var(--accent-blue);
+    color: #000;
+}
+
+/* Error display in faceplate */
+.error-display {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 0.8rem;
+}
+
+.error-display .label {
+    width: 35px;
+    color: var(--text-secondary);
+}
+
+.error-display .value {
+    font-family: 'Courier New', monospace;
+}
+
+.error-display .value.good {
+    color: var(--accent-green);
+}
+
+.error-display .value.warning {
+    color: var(--accent-yellow);
+}
+
+.error-display .value.bad {
+    color: var(--accent-red);
+}
+
+/* Output bar enhancements */
+.bar-container {
+    position: relative;
+}
+
+.saturation-indicator {
+    position: absolute;
+    right: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.6rem;
+    color: #fff;
+    font-weight: bold;
+    text-shadow: 0 0 2px #000;
+}
+
+.bar-fill.saturated {
+    background: linear-gradient(90deg, var(--accent-red), #ff6666);
+}
+
+.bar-fill.high {
+    background: linear-gradient(90deg, var(--accent-yellow), var(--accent-orange));
+}
+
+.bar-fill.low {
+    background: linear-gradient(90deg, #444, #666);
+}
+
+.bar-fill.normal {
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-green));
+}
+
+/* Mini trend chart in faceplate */
+.faceplate-trend {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #333;
+}
+
+.trend-chart {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    padding: 3px;
+}
+
+.trend-label {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    text-align: center;
+    margin-top: 2px;
+}
+
+/* Manual slider in faceplate */
+.manual-slider {
+    width: 100%;
+    height: 6px;
+    margin-top: 8px;
+    background: var(--bg-secondary);
+    border-radius: 3px;
+    -webkit-appearance: none;
+    cursor: pointer;
+}
+
+.manual-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent-yellow);
+    cursor: pointer;
+    border: 2px solid #fff;
+}
+
+.manual-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent-yellow);
+    cursor: pointer;
+    border: 2px solid #fff;
+}
+
+/* Tooltips enhancement */
+[title] {
+    cursor: help;
+}
+
+/* PV value color based on error */
+.pv-display .value.good {
+    color: var(--accent-green);
+}
+
+.pv-display .value.warning {
+    color: var(--accent-yellow);
+}
+
+.pv-display .value.bad {
+    color: var(--accent-red);
+}
+
+/* Oil tank visual */
+.oil-tank .tank-fill {
+    background: linear-gradient(to top, var(--oil-color), #a87d1a);
+}

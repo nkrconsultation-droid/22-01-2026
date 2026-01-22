@@ -1,4 +1,5 @@
 @page "/"
+@using WaterTreatmentSimulator.Shared
 @inject SimulationService Sim
 @implements IDisposable
 
@@ -13,18 +14,18 @@
         </div>
         <div class="header-center">
             <div class="sim-controls">
-                <button class="btn @(Sim.IsRunning ? "btn-warning" : "btn-success")" @onclick="ToggleSimulation">
+                <button class="btn @(Sim.IsRunning ? "btn-warning" : "btn-success")" @onclick="ToggleSimulation" title="@(Sim.IsRunning ? "Pause simulation" : "Start simulation")">
                     @(Sim.IsRunning ? "⏸ Pause" : "▶ Run")
                 </button>
-                <button class="btn btn-danger" @onclick="ResetSimulation">↻ Reset</button>
-                <select class="speed-select" @bind="Sim.TimeMultiplier">
+                <button class="btn btn-danger" @onclick="ResetSimulation" title="Reset simulation to initial state">↻ Reset</button>
+                <select class="speed-select" @bind="Sim.TimeMultiplier" title="Simulation speed multiplier">
                     <option value="1">1x Speed</option>
                     <option value="5">5x Speed</option>
                     <option value="10">10x Speed</option>
                     <option value="30">30x Speed</option>
                     <option value="60">60x Speed</option>
                 </select>
-                <a href="/massbalance" class="btn btn-secondary">Mass Balance →</a>
+                <a href="/massbalance" class="btn btn-secondary" title="View detailed mass balance calculations">Mass Balance →</a>
             </div>
         </div>
         <div class="header-right">
@@ -33,6 +34,7 @@
                 <span class="value">@FormatTime(Sim.SimulationTime)</span>
             </div>
             <div class="status-indicator @(Sim.IsRunning ? "running" : "stopped")">
+                <span class="pulse-dot"></span>
                 @(Sim.IsRunning ? "RUNNING" : "STOPPED")
             </div>
         </div>
@@ -42,27 +44,55 @@
     <div class="main-content">
         <!-- Left Panel - Tank Farm -->
         <div class="panel tank-panel">
-            <h2>Tank Farm</h2>
+            <h2>Tank Farm <span class="panel-hint">(Click to select, double-click to start batch)</span></h2>
             <div class="tank-grid">
                 @foreach (var tank in Sim.FeedTanks)
                 {
-                    <div class="tank @(tank.Id == Sim.SelectedTank ? "selected" : "") @tank.Status" @onclick="() => SelectTank(tank.Id)">
-                        <div class="tank-header">@tank.Id</div>
+                    <div class="tank @(tank.Id == Sim.SelectedTank ? "selected" : "") @tank.Status"
+                         @onclick="() => SelectTank(tank.Id)"
+                         @ondblclick="() => StartBatchFromTank(tank.Id)"
+                         title="@GetTankTooltip(tank)">
+                        <div class="tank-header">
+                            @tank.Id
+                            @if (tank.Id == Sim.SelectedTank)
+                            {
+                                <span class="selected-indicator">✓</span>
+                            }
+                        </div>
                         <div class="tank-visual">
                             <div class="tank-fill" style="height: @tank.Level%">
-                                <div class="water-layer" style="height: @tank.WaterPercent%"></div>
-                                <div class="oil-layer" style="height: @tank.OilPercent%"></div>
-                                <div class="sediment-layer" style="height: @tank.SedimentPercent%"></div>
+                                <div class="water-layer" style="height: @tank.WaterPercent%" title="Water: @tank.WaterPercent%"></div>
+                                <div class="oil-layer" style="height: @tank.OilPercent%" title="Oil: @tank.OilPercent%"></div>
+                                <div class="sediment-layer" style="height: @tank.SedimentPercent%" title="Sediment: @tank.SedimentPercent%"></div>
                             </div>
+                            @if (tank.Status == "processing")
+                            {
+                                <div class="processing-overlay">
+                                    <span class="processing-spinner"></span>
+                                </div>
+                            }
                         </div>
                         <div class="tank-info">
-                            <span>@tank.Level.ToString("F1")%</span>
-                            <span>@tank.Temperature.ToString("F1")°C</span>
+                            <span class="level">@tank.Level.ToString("F1")%</span>
+                            <span class="temp">@tank.Temperature.ToString("F1")°C</span>
                         </div>
-                        <div class="tank-status">@tank.Status.ToUpper()</div>
+                        <div class="tank-status @tank.Status">@tank.Status.ToUpper()</div>
                     </div>
                 }
             </div>
+
+            @if (Sim.SelectedTank != null && !Sim.IsRunning)
+            {
+                var selectedTank = Sim.FeedTanks.FirstOrDefault(t => t.Id == Sim.SelectedTank);
+                if (selectedTank != null && selectedTank.Status != "empty")
+                {
+                    <div class="batch-start-section">
+                        <button class="btn btn-primary btn-large" @onclick="() => StartBatchFromTank(Sim.SelectedTank!)">
+                            ▶ Start Batch from @Sim.SelectedTank (@selectedTank.VolumeM3.ToString("F1") m³)
+                        </button>
+                    </div>
+                }
+            }
 
             <h3>Oil Storage</h3>
             <div class="tank-grid">
@@ -123,36 +153,63 @@
             </div>
 
             <!-- Control Loops -->
-            <h3>Control Loops</h3>
+            <h3>Control Loops <span class="panel-hint">(PID with anti-windup)</span></h3>
             <div class="control-loops">
                 @foreach (var loop in Sim.ControlLoops)
                 {
-                    <div class="control-faceplate">
+                    <div class="control-faceplate @(loop.IsSaturated ? "saturated" : "") @(loop.InDeadband ? "stable" : "")">
                         <div class="faceplate-header">
                             <span class="tag">@loop.Tag</span>
+                            <span class="loop-status @loop.Status.ToLower()" title="@GetLoopStatusTooltip(loop)">@loop.Status</span>
                             <span class="mode @loop.Mode.ToLower()">@loop.Mode</span>
                         </div>
                         <div class="faceplate-body">
                             <div class="pv-display">
                                 <span class="label">PV</span>
-                                <span class="value">@loop.PV.ToString("F1") @loop.Unit</span>
+                                <span class="value @GetErrorClass(loop)">@loop.PV.ToString("F1") @loop.Unit</span>
                             </div>
                             <div class="sp-control">
                                 <span class="label">SP</span>
-                                <input type="number" step="0.1" @bind="loop.SP" @bind:event="oninput" />
+                                <input type="number" step="0.1" @bind="loop.SP" @bind:event="oninput" title="Setpoint" />
                                 <span class="unit">@loop.Unit</span>
+                            </div>
+                            <div class="error-display">
+                                <span class="label">Error</span>
+                                <span class="value @GetErrorClass(loop)">@loop.Error.ToString("+0.0;-0.0;0.0") @loop.Unit</span>
                             </div>
                             <div class="output-bar">
                                 <span class="label">OP</span>
-                                <div class="bar-container">
-                                    <div class="bar-fill" style="width: @loop.OP%"></div>
+                                <div class="bar-container" title="Output: @loop.OP.ToString("F1")%">
+                                    <div class="bar-fill @GetOutputClass(loop)" style="width: @loop.OP%"></div>
+                                    @if (loop.IsSaturated)
+                                    {
+                                        <div class="saturation-indicator">SAT</div>
+                                    }
                                 </div>
                                 <span class="value">@loop.OP.ToString("F1")%</span>
                             </div>
+
+                            <!-- Mini Trend Chart -->
+                            @if (loop.PVHistory.Any())
+                            {
+                                <div class="faceplate-trend" title="PV trend (solid) vs SP (dashed)">
+                                    <TrendChart
+                                        Data="loop.PVHistory.ToList()"
+                                        SecondaryData="loop.SPHistory.ToList()"
+                                        Color="@GetLoopColor(loop)"
+                                        SecondaryColor="#ffaa00"
+                                        Height="35"
+                                        Width="130" />
+                                </div>
+                            }
                         </div>
                         <div class="faceplate-footer">
-                            <button class="btn-small @(loop.Mode == "AUTO" ? "active" : "")" @onclick="() => SetLoopMode(loop, \"AUTO\")">AUTO</button>
-                            <button class="btn-small @(loop.Mode == "MAN" ? "active" : "")" @onclick="() => SetLoopMode(loop, \"MAN\")">MAN</button>
+                            <button class="btn-small @(loop.Mode == "AUTO" ? "active" : "")" @onclick="() => SetLoopMode(loop, \"AUTO\")" title="Automatic mode - PID controls output">AUTO</button>
+                            <button class="btn-small @(loop.Mode == "MAN" ? "active" : "")" @onclick="() => SetLoopMode(loop, \"MAN\")" title="Manual mode - Direct output control">MAN</button>
+                            @if (loop.Mode == "MAN")
+                            {
+                                <input type="range" min="0" max="100" step="1" @bind="loop.OP" @bind:event="oninput" class="manual-slider" title="Manual output" />
+                            }
                         </div>
                     </div>
                 }
@@ -336,6 +393,14 @@
         Sim.SelectTank(tankId);
     }
 
+    private void StartBatchFromTank(string tankId)
+    {
+        if (!Sim.IsRunning)
+        {
+            Sim.StartBatch(tankId);
+        }
+    }
+
     private void SetLoopMode(ControlLoop loop, string mode)
     {
         loop.Mode = mode;
@@ -370,6 +435,41 @@
     private string GetSaturationClass(double value)
     {
         return value < 70 ? "good" : value < 85 ? "warning" : "bad";
+    }
+
+    private string GetTankTooltip(FeedTank tank)
+    {
+        return $"{tank.Id}: {tank.VolumeM3:F1} m³\nWater: {tank.WaterPercent}%, Oil: {tank.OilPercent}%, Sediment: {tank.SedimentPercent}%\nTemperature: {tank.Temperature:F1}°C\nStatus: {tank.Status}";
+    }
+
+    private string GetLoopStatusTooltip(ControlLoop loop)
+    {
+        return loop.Status switch
+        {
+            "OK" => "Loop is stable within deadband",
+            "SAT" => "Output is saturated (at limit)",
+            "ACT" => "Loop is actively controlling",
+            _ => loop.Status
+        };
+    }
+
+    private string GetErrorClass(ControlLoop loop)
+    {
+        var pctError = loop.PercentError;
+        return pctError < 2 ? "good" : pctError < 5 ? "warning" : "bad";
+    }
+
+    private string GetOutputClass(ControlLoop loop)
+    {
+        if (loop.IsSaturated) return "saturated";
+        return loop.OP > 80 ? "high" : loop.OP < 20 ? "low" : "normal";
+    }
+
+    private string GetLoopColor(ControlLoop loop)
+    {
+        if (loop.IsSaturated) return "#ff6b6b";
+        if (loop.InDeadband) return "#00ff88";
+        return "#4dabf7";
     }
 
     public void Dispose()

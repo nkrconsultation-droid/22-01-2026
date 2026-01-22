@@ -59,7 +59,7 @@ public class FeedProperties
 }
 
 /// <summary>
-/// PID Control Loop
+/// PID Control Loop with anti-windup, rate limiting, and derivative filtering
 /// </summary>
 public class ControlLoop
 {
@@ -77,6 +77,40 @@ public class ControlLoop
     public double Kd { get; set; } = 0.05;
     public double Integral { get; set; } = 0;
     public double LastError { get; set; } = 0;
+
+    // Advanced PID parameters
+    public double DerivativeFilter { get; set; } = 0; // Filtered derivative term
+    public double FilterCoeff { get; set; } = 0.1; // Derivative low-pass filter coefficient (0-1)
+    public double RateLimit { get; set; } = 10; // Max output change per second (% per sec)
+    public double LastOP { get; set; } = 50; // Previous output for rate limiting
+    public double Deadband { get; set; } = 0.5; // Error deadband
+    public double OutputMin { get; set; } = 0; // Minimum output
+    public double OutputMax { get; set; } = 100; // Maximum output
+
+    // Performance tracking
+    public double Error => SP - PV;
+    public double AbsError => Math.Abs(Error);
+    public double PercentError => SP != 0 ? (AbsError / SP) * 100 : 0;
+    public bool InDeadband => AbsError <= Deadband;
+    public bool IsSaturated => OP <= OutputMin || OP >= OutputMax;
+    public string Status => InDeadband ? "OK" : IsSaturated ? "SAT" : "ACT";
+
+    // Trend data for mini sparkline
+    public List<double> PVHistory { get; } = new();
+    public List<double> SPHistory { get; } = new();
+    public List<double> OPHistory { get; } = new();
+    public const int HistoryLength = 60; // Keep 60 data points
+
+    public void RecordHistory()
+    {
+        PVHistory.Add(PV);
+        SPHistory.Add(SP);
+        OPHistory.Add(OP);
+
+        if (PVHistory.Count > HistoryLength) PVHistory.RemoveAt(0);
+        if (SPHistory.Count > HistoryLength) SPHistory.RemoveAt(0);
+        if (OPHistory.Count > HistoryLength) OPHistory.RemoveAt(0);
+    }
 }
 
 /// <summary>
