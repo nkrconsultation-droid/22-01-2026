@@ -1,0 +1,380 @@
+@page "/"
+@inject SimulationService Sim
+@implements IDisposable
+
+<PageTitle>Water Treatment Plant Simulator</PageTitle>
+
+<div class="simulator-container">
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <h1>Centrifuge Process Control</h1>
+            <span class="subtitle">Water Treatment Plant Simulator</span>
+        </div>
+        <div class="header-center">
+            <div class="sim-controls">
+                <button class="btn @(Sim.IsRunning ? "btn-warning" : "btn-success")" @onclick="ToggleSimulation">
+                    @(Sim.IsRunning ? "⏸ Pause" : "▶ Run")
+                </button>
+                <button class="btn btn-danger" @onclick="ResetSimulation">↻ Reset</button>
+                <select class="speed-select" @bind="Sim.TimeMultiplier">
+                    <option value="1">1x Speed</option>
+                    <option value="5">5x Speed</option>
+                    <option value="10">10x Speed</option>
+                    <option value="30">30x Speed</option>
+                    <option value="60">60x Speed</option>
+                </select>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="time-display">
+                <span class="label">Sim Time:</span>
+                <span class="value">@FormatTime(Sim.SimulationTime)</span>
+            </div>
+            <div class="status-indicator @(Sim.IsRunning ? "running" : "stopped")">
+                @(Sim.IsRunning ? "RUNNING" : "STOPPED")
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Left Panel - Tank Farm -->
+        <div class="panel tank-panel">
+            <h2>Tank Farm</h2>
+            <div class="tank-grid">
+                @foreach (var tank in Sim.FeedTanks)
+                {
+                    <div class="tank @(tank.Id == Sim.SelectedTank ? "selected" : "") @tank.Status" @onclick="() => SelectTank(tank.Id)">
+                        <div class="tank-header">@tank.Id</div>
+                        <div class="tank-visual">
+                            <div class="tank-fill" style="height: @tank.Level%">
+                                <div class="water-layer" style="height: @tank.WaterPercent%"></div>
+                                <div class="oil-layer" style="height: @tank.OilPercent%"></div>
+                                <div class="sediment-layer" style="height: @tank.SedimentPercent%"></div>
+                            </div>
+                        </div>
+                        <div class="tank-info">
+                            <span>@tank.Level.ToString("F1")%</span>
+                            <span>@tank.Temperature.ToString("F1")°C</span>
+                        </div>
+                        <div class="tank-status">@tank.Status.ToUpper()</div>
+                    </div>
+                }
+            </div>
+
+            <h3>Oil Storage</h3>
+            <div class="tank-grid">
+                @foreach (var tank in Sim.OilTanks)
+                {
+                    <div class="tank oil-tank @tank.Status">
+                        <div class="tank-header">@tank.Id</div>
+                        <div class="tank-visual">
+                            <div class="tank-fill oil" style="height: @tank.Level%"></div>
+                        </div>
+                        <div class="tank-info">
+                            <span>@tank.Level.ToString("F1")%</span>
+                        </div>
+                        <div class="tank-status">@tank.Status.ToUpper()</div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Center Panel - Process View -->
+        <div class="panel process-panel">
+            <h2>Process Overview</h2>
+
+            <!-- Process State Display -->
+            <div class="process-state-grid">
+                <div class="state-card">
+                    <span class="label">Feed Flow</span>
+                    <span class="value">@Sim.State.FeedFlow.ToString("F1") m³/h</span>
+                </div>
+                <div class="state-card">
+                    <span class="label">Heater Temp</span>
+                    <span class="value">@Sim.State.HeaterTemp.ToString("F1") °C</span>
+                </div>
+                <div class="state-card">
+                    <span class="label">Bowl Speed</span>
+                    <span class="value">@Sim.State.BowlSpeed.ToString("F0") RPM</span>
+                </div>
+                <div class="state-card">
+                    <span class="label">G-Force</span>
+                    <span class="value">@Sim.State.GForce.ToString("F0") G</span>
+                </div>
+                <div class="state-card">
+                    <span class="label">Oil Efficiency</span>
+                    <span class="value @GetEfficiencyClass(Sim.State.OilEfficiency, Sim.Targets.OilEfficiency)">@Sim.State.OilEfficiency.ToString("F1")%</span>
+                </div>
+                <div class="state-card">
+                    <span class="label">Water Quality</span>
+                    <span class="value @GetQualityClass(Sim.State.WaterQuality, Sim.Targets.WaterQuality)">@Sim.State.WaterQuality.ToString("F0") ppm</span>
+                </div>
+                <div class="state-card">
+                    <span class="label">Vibration</span>
+                    <span class="value @GetVibrationClass(Sim.State.Vibration)">@Sim.State.Vibration.ToString("F1") mm/s</span>
+                </div>
+                <div class="state-card">
+                    <span class="label">Total Power</span>
+                    <span class="value">@Sim.State.TotalPower.ToString("F1") kW</span>
+                </div>
+            </div>
+
+            <!-- Control Loops -->
+            <h3>Control Loops</h3>
+            <div class="control-loops">
+                @foreach (var loop in Sim.ControlLoops)
+                {
+                    <div class="control-faceplate">
+                        <div class="faceplate-header">
+                            <span class="tag">@loop.Tag</span>
+                            <span class="mode @loop.Mode.ToLower()">@loop.Mode</span>
+                        </div>
+                        <div class="faceplate-body">
+                            <div class="pv-display">
+                                <span class="label">PV</span>
+                                <span class="value">@loop.PV.ToString("F1") @loop.Unit</span>
+                            </div>
+                            <div class="sp-control">
+                                <span class="label">SP</span>
+                                <input type="number" step="0.1" @bind="loop.SP" @bind:event="oninput" />
+                                <span class="unit">@loop.Unit</span>
+                            </div>
+                            <div class="output-bar">
+                                <span class="label">OP</span>
+                                <div class="bar-container">
+                                    <div class="bar-fill" style="width: @loop.OP%"></div>
+                                </div>
+                                <span class="value">@loop.OP.ToString("F1")%</span>
+                            </div>
+                        </div>
+                        <div class="faceplate-footer">
+                            <button class="btn-small @(loop.Mode == "AUTO" ? "active" : "")" @onclick="() => SetLoopMode(loop, \"AUTO\")">AUTO</button>
+                            <button class="btn-small @(loop.Mode == "MAN" ? "active" : "")" @onclick="() => SetLoopMode(loop, \"MAN\")">MAN</button>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- Batch Phase -->
+            @if (Sim.CurrentPhase != null)
+            {
+                <div class="batch-phase">
+                    <h3>Current Batch Phase</h3>
+                    <div class="phase-info">
+                        <span class="phase-icon">@Sim.CurrentPhase.Icon</span>
+                        <span class="phase-name">@Sim.CurrentPhase.Name</span>
+                        <div class="phase-details">
+                            <span>Volume: @Sim.CurrentPhase.Volume.ToString("F1") m³</span>
+                            <span>Flow: @Sim.CurrentPhase.Flow.ToString("F1") m³/h</span>
+                            <span>RPM: @Sim.CurrentPhase.RPM.ToString("F0")</span>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Right Panel - Equipment & Outputs -->
+        <div class="panel equipment-panel">
+            <!-- Polishing Filter -->
+            <h2>Polishing Filter (SPDD1600)</h2>
+            <div class="filter-status">
+                <div class="filter-header">
+                    <span class="status @Sim.Filter.Status.ToLower()">@Sim.Filter.Status</span>
+                    <label class="toggle">
+                        <input type="checkbox" @bind="Sim.Filter.Enabled" />
+                        <span>Enabled</span>
+                    </label>
+                </div>
+                <div class="filter-metrics">
+                    <div class="metric">
+                        <span class="label">ΔP</span>
+                        <span class="value">@Sim.Filter.DifferentialPressure.ToString("F2") bar</span>
+                    </div>
+                    <div class="metric">
+                        <span class="label">Bed Saturation</span>
+                        <div class="progress-bar">
+                            <div class="progress-fill @GetSaturationClass(Sim.Filter.BedSaturation)" style="width: @Sim.Filter.BedSaturation%"></div>
+                        </div>
+                        <span class="value">@Sim.Filter.BedSaturation.ToString("F1")%</span>
+                    </div>
+                    <div class="metric">
+                        <span class="label">Turbidity In/Out</span>
+                        <span class="value">@Sim.Filter.InletTurbidity.ToString("F0") → @Sim.Filter.OutletTurbidity.ToString("F0") NTU</span>
+                    </div>
+                    <div class="metric">
+                        <span class="label">OiW In/Out</span>
+                        <span class="value">@Sim.Filter.InletOiW.ToString("F0") → @Sim.Filter.OutletOiW.ToString("F0") ppm</span>
+                    </div>
+                </div>
+                <button class="btn btn-secondary" @onclick="TriggerBackwash" disabled="@(Sim.Filter.Status == "BACKWASH")">
+                    Start Backwash
+                </button>
+            </div>
+
+            <!-- Evaporation Pond -->
+            <h3>Evaporation Pond</h3>
+            <div class="pond-status">
+                <div class="pond-visual">
+                    <div class="pond-level" style="height: @Sim.Pond.Level%"></div>
+                </div>
+                <div class="pond-metrics">
+                    <div class="metric">
+                        <span class="label">Level</span>
+                        <span class="value">@Sim.Pond.Level.ToString("F1")% (@Sim.Pond.Volume.ToString("F0") m³)</span>
+                    </div>
+                    <div class="metric">
+                        <span class="label">pH</span>
+                        <span class="value">@Sim.Pond.pH.ToString("F1")</span>
+                    </div>
+                    <div class="metric">
+                        <span class="label">Evap Rate</span>
+                        <span class="value">@Sim.Pond.EvaporationRate.ToString("F1") mm/day</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Production Totals -->
+            <h3>Production Totals</h3>
+            <div class="production-totals">
+                <div class="total-item">
+                    <span class="label">Feed Processed</span>
+                    <span class="value">@Sim.Totals.Feed.ToString("F1") m³</span>
+                </div>
+                <div class="total-item">
+                    <span class="label">Water Output</span>
+                    <span class="value">@Sim.Totals.Water.ToString("F1") m³</span>
+                </div>
+                <div class="total-item">
+                    <span class="label">Oil Recovered</span>
+                    <span class="value">@Sim.Totals.Oil.ToString("F1") m³</span>
+                </div>
+                <div class="total-item">
+                    <span class="label">Energy Used</span>
+                    <span class="value">@Sim.Totals.Energy.ToString("F1") kWh</span>
+                </div>
+                <div class="total-item">
+                    <span class="label">Run Time</span>
+                    <span class="value">@FormatTime(Sim.Totals.RunTime)</span>
+                </div>
+            </div>
+
+            <!-- Alarms -->
+            @if (Sim.ActiveAlarms.Any())
+            {
+                <h3>Active Alarms</h3>
+                <div class="alarm-list">
+                    @foreach (var alarm in Sim.ActiveAlarms)
+                    {
+                        <div class="alarm @alarm.Severity">
+                            <span class="alarm-type">@alarm.Type</span>
+                            <span class="alarm-value">@alarm.Value.ToString("F1") (Limit: @alarm.Limit.ToString("F1"))</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Footer - Log Messages -->
+    <footer class="footer">
+        <div class="log-container">
+            @foreach (var log in LogMessages.TakeLast(5))
+            {
+                <div class="log-entry">@log</div>
+            }
+        </div>
+    </footer>
+</div>
+
+@code {
+    private List<string> LogMessages = new List<string>();
+    private System.Threading.Timer? _refreshTimer;
+
+    protected override void OnInitialized()
+    {
+        Sim.OnStateChanged += HandleStateChanged;
+        Sim.OnLogMessage += HandleLogMessage;
+
+        // Start a refresh timer for UI updates
+        _refreshTimer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(StateHasChanged);
+        }, null, 0, 50); // 20Hz refresh
+    }
+
+    private void HandleStateChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleLogMessage(string message)
+    {
+        LogMessages.Add($"[{DateTime.Now:HH:mm:ss}] {message}");
+        if (LogMessages.Count > 100)
+            LogMessages.RemoveAt(0);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleSimulation()
+    {
+        if (Sim.IsRunning)
+            Sim.Stop();
+        else
+            Sim.Start();
+    }
+
+    private void ResetSimulation()
+    {
+        Sim.Reset();
+    }
+
+    private void SelectTank(string tankId)
+    {
+        Sim.SelectTank(tankId);
+    }
+
+    private void SetLoopMode(ControlLoop loop, string mode)
+    {
+        loop.Mode = mode;
+    }
+
+    private void TriggerBackwash()
+    {
+        Sim.TriggerBackwash();
+    }
+
+    private string FormatTime(double seconds)
+    {
+        var ts = TimeSpan.FromSeconds(seconds);
+        return ts.ToString(@"hh\:mm\:ss");
+    }
+
+    private string GetEfficiencyClass(double value, double target)
+    {
+        return value >= target ? "good" : value >= target * 0.9 ? "warning" : "bad";
+    }
+
+    private string GetQualityClass(double value, double target)
+    {
+        return value <= target ? "good" : value <= target * 1.2 ? "warning" : "bad";
+    }
+
+    private string GetVibrationClass(double value)
+    {
+        return value < 4 ? "good" : value < 5 ? "warning" : "bad";
+    }
+
+    private string GetSaturationClass(double value)
+    {
+        return value < 70 ? "good" : value < 85 ? "warning" : "bad";
+    }
+
+    public void Dispose()
+    {
+        Sim.OnStateChanged -= HandleStateChanged;
+        Sim.OnLogMessage -= HandleLogMessage;
+        _refreshTimer?.Dispose();
+    }
+}
