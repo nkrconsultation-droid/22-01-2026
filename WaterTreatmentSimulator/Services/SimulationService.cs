@@ -14,6 +14,12 @@ public class SimulationService : IDisposable
     public double SimSpeed { get; set; } = 10;
     public double SimTime { get; private set; }
 
+    // Aliases for UI compatibility
+    public double SimulationTime => SimTime;
+    public double TimeMultiplier { get => SimSpeed; set => SimSpeed = value; }
+    public string? SelectedTank => SelectedFeedTank;
+    public ProcessState State => Process;
+
     // Core models
     public Equipment Equipment { get; } = new();
     public FeedProperties FeedProps { get; } = new();
@@ -24,10 +30,19 @@ public class SimulationService : IDisposable
     public EvaporationPond Pond { get; } = new();
     public PolishingFilter Filter { get; } = new();
 
+    // Mass Balance with calculated values
+    public MassBalance MassBalance { get; } = new();
+
+    // Stokes Law calculation results
+    public StokesLawCalc StokesCalc { get; } = new();
+
     // Control loops
     public ControlLoop TIC { get; } = new() { Tag = "TIC-001", Description = "Heater Outlet Temp", Unit = "°C", PV = 65, SP = 65, OP = 50, Kp = 2.0, Ki = 0.1, Kd = 0.5 };
     public ControlLoop FIC { get; } = new() { Tag = "FIC-001", Description = "Feed Flow Rate", Unit = "m³/h", PV = 12, SP = 12, OP = 60, Kp = 1.5, Ki = 0.2, Kd = 0.1 };
     public ControlLoop SIC { get; } = new() { Tag = "SIC-001", Description = "Bowl Speed", Unit = "RPM", PV = 3500, SP = 3500, OP = 70, Kp = 0.5, Ki = 0.05, Kd = 0.02 };
+
+    // Control loops as list for iteration
+    public List<ControlLoop> ControlLoops => new() { TIC, FIC, SIC };
 
     // Tanks
     public List<FeedTank> FeedTanks { get; } = new();
@@ -41,6 +56,10 @@ public class SimulationService : IDisposable
     public double BatchVolumeRemaining { get; private set; }
     public List<BatchPhase> BatchPhases { get; } = new();
 
+    // Current batch phase accessor
+    public BatchPhase? CurrentPhase => IsBatchMode && CurrentBatchPhase < BatchPhases.Count
+        ? BatchPhases[CurrentBatchPhase] : null;
+
     // Alarms
     public List<Alarm> ActiveAlarms { get; } = new();
 
@@ -51,6 +70,13 @@ public class SimulationService : IDisposable
     // Events
     public event Action? OnStateChanged;
     public event Action<string, string>? OnEventLogged;
+    public event Action<string>? OnLogMessage;
+
+    private void LogMessage(string category, string message)
+    {
+        LogMessage(category, message);
+        OnLogMessage?.Invoke($"[{category}] {message}");
+    }
 
     public SimulationService()
     {
@@ -105,7 +131,7 @@ public class SimulationService : IDisposable
         _timer.Elapsed += OnTimerTick;
         _timer.Start();
 
-        OnEventLogged?.Invoke("START", "Simulation started");
+        LogMessage("START", "Simulation started");
         OnStateChanged?.Invoke();
     }
 
@@ -118,7 +144,7 @@ public class SimulationService : IDisposable
         _timer?.Dispose();
         _timer = null;
 
-        OnEventLogged?.Invoke("STOP", "Simulation stopped");
+        LogMessage("STOP", "Simulation stopped");
         OnStateChanged?.Invoke();
     }
 
@@ -139,7 +165,7 @@ public class SimulationService : IDisposable
         CurrentBatchPhase = 0;
         SimTime = 0;
 
-        OnEventLogged?.Invoke("BATCH", $"Started batch from {tankId} - {BatchVolumeRemaining:F1} m³");
+        LogMessage("BATCH", $"Started batch from {tankId} - {BatchVolumeRemaining:F1} m³");
         Start();
     }
 
@@ -190,7 +216,7 @@ public class SimulationService : IDisposable
 
         SelectedFeedTank = null;
 
-        OnEventLogged?.Invoke("RESET", "Simulation reset");
+        LogMessage("RESET", "Simulation reset");
         OnStateChanged?.Invoke();
     }
 
@@ -297,7 +323,7 @@ public class SimulationService : IDisposable
                     if (i != CurrentBatchPhase)
                     {
                         CurrentBatchPhase = i;
-                        OnEventLogged?.Invoke("PHASE", BatchPhases[i].Name);
+                        LogMessage("PHASE", BatchPhases[i].Name);
                     }
                     break;
                 }
@@ -317,7 +343,7 @@ public class SimulationService : IDisposable
                     }
                 }
                 SelectedFeedTank = null;
-                OnEventLogged?.Invoke("COMPLETE", $"Batch complete - {totalVol:F0} m³ processed");
+                LogMessage("COMPLETE", $"Batch complete - {totalVol:F0} m³ processed");
                 Stop();
             }
         }
@@ -358,50 +384,124 @@ public class SimulationService : IDisposable
 
     private void CalculateEfficiency(double waterFrac, double oilFrac, double solidsFrac)
     {
-        // Simplified Stokes Law separation model
-        var r = Equipment.BowlDiameter / 2000.0; // m
-        var w = Process.BowlSpeed * 2 * Math.PI / 60.0; // rad/s
-        var g = w * w * r;
+        // ============================================
+        // STOKES LAW SEPARATION MODEL - All Calculations
+        // ============================================
+
+        // Bowl geometry calculations
+        var r = Equipment.BowlDiameter / 2000.0; // m (radius)
+        var w = Process.BowlSpeed * 2 * Math.PI / 60.0; // rad/s (angular velocity)
+        var g = w * w * r; // centrifugal acceleration (m/s²)
         Process.GForce = g / 9.81;
 
-        // Density differences
+        // Store Stokes calculations for display
+        StokesCalc.BowlRadius = r;
+        StokesCalc.AngularVelocity = w;
+        StokesCalc.CentrifugalAcceleration = g;
+        StokesCalc.GForce = Process.GForce;
+
+        // Density calculations
         var waterDensityAdj = FeedProps.WaterDensity + FeedProps.Salinity * 0.0007;
         var oilWaterDeltaRho = Math.Abs(waterDensityAdj - FeedProps.OilDensity);
         var solidsWaterDeltaRho = FeedProps.SolidsDensity - waterDensityAdj;
 
-        // Viscosity (temperature adjusted)
-        var viscRef = FeedProps.OilViscosity * 0.001;
+        StokesCalc.WaterDensityAdjusted = waterDensityAdj;
+        StokesCalc.OilWaterDensityDiff = oilWaterDeltaRho;
+        StokesCalc.SolidsWaterDensityDiff = solidsWaterDeltaRho;
+
+        // Viscosity (temperature adjusted using Arrhenius-type equation)
+        var viscRef = FeedProps.OilViscosity * 0.001; // Pa·s
         var visc = viscRef * Math.Exp(FeedProps.ViscosityTempCoeff * (25 - Process.BowlTemp) * 10);
 
-        // Stokes settling velocities
-        var oilD50m = FeedProps.OilDropletD50 * 1e-6;
+        StokesCalc.ReferenceViscosity = viscRef * 1000; // mPa·s
+        StokesCalc.TemperatureAdjustedViscosity = visc * 1000; // mPa·s
+
+        // Stokes settling velocities: v = (d² × Δρ × g) / (18 × μ)
+        var oilD50m = FeedProps.OilDropletD50 * 1e-6; // m
         var oilSettle = (oilD50m * oilD50m * oilWaterDeltaRho * g) / (18 * visc);
 
-        var solidsD50m = FeedProps.SolidsD50 * 1e-6;
+        var solidsD50m = FeedProps.SolidsD50 * 1e-6; // m
         var solidsSettle = (solidsD50m * solidsD50m * solidsWaterDeltaRho * g) / (18 * visc);
 
-        // Residence time
-        var vol = Math.PI * r * r * (Equipment.BowlLength / 1000.0);
-        var resTime = vol / Math.Max(Process.FeedFlow / 3600.0, 0.001);
-        var dist = r * 0.3;
+        StokesCalc.OilDropletDiameter = FeedProps.OilDropletD50;
+        StokesCalc.SolidsDiameter = FeedProps.SolidsD50;
+        StokesCalc.OilSettlingVelocity = oilSettle * 1000; // mm/s
+        StokesCalc.SolidsSettlingVelocity = solidsSettle * 1000; // mm/s
 
-        // Base efficiency (logistic curve)
-        double oilEff = 100.0 / (1 + Math.Exp(-2.5 * (oilSettle * resTime / dist - 1)));
-        double solidsEff = 100.0 / (1 + Math.Exp(-2.5 * (solidsSettle * resTime / dist - 1)));
+        // Residence time and separation distance
+        var vol = Math.PI * r * r * (Equipment.BowlLength / 1000.0); // m³
+        var flowRate = Math.Max(Process.FeedFlow / 3600.0, 0.001); // m³/s
+        var resTime = vol / flowRate; // seconds
+        var dist = r * 0.3; // separation distance (30% of radius)
 
-        // Apply modifiers
+        StokesCalc.BowlVolume = vol * 1000; // liters
+        StokesCalc.ResidenceTime = resTime;
+        StokesCalc.SeparationDistance = dist * 1000; // mm
+        StokesCalc.OilSeparationRatio = oilSettle * resTime / dist;
+        StokesCalc.SolidsSeparationRatio = solidsSettle * resTime / dist;
+
+        // Base efficiency (logistic/sigmoid curve)
+        double oilEff = 100.0 / (1 + Math.Exp(-2.5 * (StokesCalc.OilSeparationRatio - 1)));
+        double solidsEff = 100.0 / (1 + Math.Exp(-2.5 * (StokesCalc.SolidsSeparationRatio - 1)));
+
+        StokesCalc.BaseOilEfficiency = oilEff;
+        StokesCalc.BaseSolidsEfficiency = solidsEff;
+
+        // Apply process modifiers
         var demulsifierEffect = FeedProps.DemulsifierDose > 0 ? FeedProps.DemulsifierEff * Math.Min(1, FeedProps.DemulsifierDose / 100.0) : 0;
         var emulFac = 1 - FeedProps.EmulsionStability * 0.3 * (1 - demulsifierEffect);
         var tempFac = 1 + (Process.BowlTemp - 60) * 0.008;
         var flowFac = Math.Max(0.6, 1 - (Process.FeedFlow - 10) * 0.04);
 
+        StokesCalc.DemulsifierFactor = demulsifierEffect;
+        StokesCalc.EmulsionFactor = emulFac;
+        StokesCalc.TemperatureFactor = tempFac;
+        StokesCalc.FlowFactor = flowFac;
+
         Process.OilEfficiency = Clamp(oilEff * flowFac * emulFac * tempFac + GaussianRandom(0, 1), 0, 99.5);
         Process.SolidsEfficiency = Clamp(solidsEff * flowFac * tempFac + GaussianRandom(0, 0.5), 0, 99.9);
 
+        // ============================================
+        // MASS BALANCE CALCULATIONS
+        // ============================================
+
+        // Input streams (all in m³/h)
+        MassBalance.FeedFlowIn = Process.FeedFlow;
+        MassBalance.FeedWaterIn = Process.FeedFlow * waterFrac;
+        MassBalance.FeedOilIn = Process.FeedFlow * oilFrac;
+        MassBalance.FeedSolidsIn = Process.FeedFlow * solidsFrac;
+
+        // Mass flows (kg/h) = volumetric flow × density
+        MassBalance.FeedMassIn = (MassBalance.FeedWaterIn * waterDensityAdj) +
+                                  (MassBalance.FeedOilIn * FeedProps.OilDensity) +
+                                  (MassBalance.FeedSolidsIn * FeedProps.SolidsDensity);
+
+        // Separation products
+        MassBalance.OilRecovered = MassBalance.FeedOilIn * (Process.OilEfficiency / 100.0);
+        MassBalance.OilLostToWater = MassBalance.FeedOilIn * (1 - Process.OilEfficiency / 100.0);
+        MassBalance.SolidsRemoved = MassBalance.FeedSolidsIn * (Process.SolidsEfficiency / 100.0);
+        MassBalance.SolidsLostToWater = MassBalance.FeedSolidsIn * (1 - Process.SolidsEfficiency / 100.0);
+
+        // Output streams
+        MassBalance.WaterFlowOut = MassBalance.FeedWaterIn + MassBalance.OilLostToWater + MassBalance.SolidsLostToWater;
+        MassBalance.OilFlowOut = MassBalance.OilRecovered;
+        MassBalance.SolidsFlowOut = MassBalance.SolidsRemoved;
+
         // Water quality (OiW ppm)
-        var oilCarryover = Process.FeedFlow * oilFrac * (1 - Process.OilEfficiency / 100.0);
-        var waterOutputFlow = Math.Max(Process.WaterOut, 0.001);
+        var oilCarryover = MassBalance.OilLostToWater;
+        var waterOutputFlow = Math.Max(MassBalance.WaterFlowOut, 0.001);
         Process.WaterQuality = (oilCarryover / waterOutputFlow) * 1e6 * (FeedProps.OilDensity / FeedProps.WaterDensity);
+
+        MassBalance.WaterOilContent = Process.WaterQuality; // ppm
+
+        // Mass balance verification (should equal 100%)
+        MassBalance.TotalFlowOut = MassBalance.WaterFlowOut + MassBalance.OilFlowOut + MassBalance.SolidsFlowOut;
+        MassBalance.MassBalanceError = ((MassBalance.TotalFlowOut - MassBalance.FeedFlowIn) / MassBalance.FeedFlowIn) * 100;
+
+        // Update process outputs
+        Process.WaterOut = MassBalance.WaterFlowOut;
+        Process.OilOut = MassBalance.OilFlowOut;
+        Process.SolidsOut = MassBalance.SolidsFlowOut;
 
         // pH and turbidity
         Process.pH = Clamp(7.0 + (1 - oilFrac * 10) * 0.3 - (Process.BowlTemp - 60) * 0.01 + GaussianRandom(0, 0.15), 4.0, 10.0);
@@ -470,7 +570,7 @@ public class SimulationService : IDisposable
             Filter.Status = "BACKWASH";
             Filter.BackwashRemaining = 300;
             Filter.BackwashCount++;
-            OnEventLogged?.Invoke("FILTER", "Auto-backwash triggered");
+            LogMessage("FILTER", "Auto-backwash triggered");
         }
     }
 
@@ -504,7 +604,7 @@ public class SimulationService : IDisposable
 
             if (tank.Level >= OilTank.HighHighLevel)
             {
-                OnEventLogged?.Invoke("INTERLOCK", $"{tank.Id} HIGH-HIGH level");
+                LogMessage("INTERLOCK", $"{tank.Id} HIGH-HIGH level");
                 Stop();
             }
         }
@@ -531,7 +631,7 @@ public class SimulationService : IDisposable
             tank.Level = level;
             tank.Status = "ready";
         }
-        OnEventLogged?.Invoke("REFILL", $"Tanks refilled to {level}%");
+        LogMessage("REFILL", $"Tanks refilled to {level}%");
         OnStateChanged?.Invoke();
     }
 
@@ -543,7 +643,7 @@ public class SimulationService : IDisposable
             tank.Level = 0;
             tank.Status = "empty";
         }
-        OnEventLogged?.Invoke("SHIP", $"Shipped {totalVol:F1} m³ oil");
+        LogMessage("SHIP", $"Shipped {totalVol:F1} m³ oil");
         OnStateChanged?.Invoke();
     }
 
@@ -554,7 +654,7 @@ public class SimulationService : IDisposable
             Filter.Status = "BACKWASH";
             Filter.BackwashRemaining = 300;
             Filter.BackwashCount++;
-            OnEventLogged?.Invoke("FILTER", "Manual backwash triggered");
+            LogMessage("FILTER", "Manual backwash triggered");
             OnStateChanged?.Invoke();
         }
     }

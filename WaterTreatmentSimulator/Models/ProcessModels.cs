@@ -266,3 +266,84 @@ public class TrendDataPoint
     public double pH { get; set; }
     public double Turbidity { get; set; }
 }
+
+/// <summary>
+/// Mass Balance - All calculated flow values for the separation process
+/// </summary>
+public class MassBalance
+{
+    // ===== INPUT STREAM =====
+    public double FeedFlowIn { get; set; }        // Total feed flow (m³/h)
+    public double FeedWaterIn { get; set; }       // Water component in feed (m³/h)
+    public double FeedOilIn { get; set; }         // Oil component in feed (m³/h)
+    public double FeedSolidsIn { get; set; }      // Solids component in feed (m³/h)
+    public double FeedMassIn { get; set; }        // Total mass flow in (kg/h)
+
+    // ===== SEPARATION PRODUCTS =====
+    public double OilRecovered { get; set; }      // Oil successfully separated (m³/h)
+    public double OilLostToWater { get; set; }    // Oil lost to water stream (m³/h)
+    public double SolidsRemoved { get; set; }     // Solids successfully removed (m³/h)
+    public double SolidsLostToWater { get; set; } // Solids lost to water stream (m³/h)
+
+    // ===== OUTPUT STREAMS =====
+    public double WaterFlowOut { get; set; }      // Water output flow (m³/h)
+    public double OilFlowOut { get; set; }        // Oil output flow (m³/h)
+    public double SolidsFlowOut { get; set; }     // Solids output flow (m³/h)
+    public double TotalFlowOut { get; set; }      // Total output flow (m³/h)
+
+    // ===== QUALITY METRICS =====
+    public double WaterOilContent { get; set; }   // Oil in water (ppm)
+    public double MassBalanceError { get; set; }  // Balance closure error (%)
+
+    // ===== CALCULATED RATIOS =====
+    public double OilRecoveryRate => FeedOilIn > 0 ? (OilRecovered / FeedOilIn) * 100 : 0;
+    public double SolidsRemovalRate => FeedSolidsIn > 0 ? (SolidsRemoved / FeedSolidsIn) * 100 : 0;
+    public double WaterRecoveryRate => FeedWaterIn > 0 ? (WaterFlowOut / FeedWaterIn) * 100 : 0;
+}
+
+/// <summary>
+/// Stokes Law Calculation Results - All intermediate values
+/// </summary>
+public class StokesLawCalc
+{
+    // ===== GEOMETRY =====
+    public double BowlRadius { get; set; }              // m
+    public double BowlVolume { get; set; }              // liters
+
+    // ===== ROTATIONAL DYNAMICS =====
+    public double AngularVelocity { get; set; }         // rad/s
+    public double CentrifugalAcceleration { get; set; } // m/s²
+    public double GForce { get; set; }                  // dimensionless
+
+    // ===== FLUID PROPERTIES =====
+    public double WaterDensityAdjusted { get; set; }    // kg/m³ (salinity adjusted)
+    public double OilWaterDensityDiff { get; set; }     // kg/m³ (Δρ oil-water)
+    public double SolidsWaterDensityDiff { get; set; }  // kg/m³ (Δρ solids-water)
+    public double ReferenceViscosity { get; set; }      // mPa·s at 25°C
+    public double TemperatureAdjustedViscosity { get; set; } // mPa·s at bowl temp
+
+    // ===== PARTICLE/DROPLET PROPERTIES =====
+    public double OilDropletDiameter { get; set; }      // μm (D50)
+    public double SolidsDiameter { get; set; }          // μm (D50)
+
+    // ===== STOKES SETTLING VELOCITIES =====
+    // v = (d² × Δρ × g) / (18 × μ)
+    public double OilSettlingVelocity { get; set; }     // mm/s
+    public double SolidsSettlingVelocity { get; set; }  // mm/s
+
+    // ===== SEPARATION PERFORMANCE =====
+    public double ResidenceTime { get; set; }           // seconds
+    public double SeparationDistance { get; set; }      // mm
+    public double OilSeparationRatio { get; set; }      // (v × t) / d (dimensionless)
+    public double SolidsSeparationRatio { get; set; }   // (v × t) / d (dimensionless)
+
+    // ===== EFFICIENCY CALCULATIONS =====
+    public double BaseOilEfficiency { get; set; }       // % (before modifiers)
+    public double BaseSolidsEfficiency { get; set; }    // % (before modifiers)
+
+    // ===== PROCESS MODIFIERS =====
+    public double DemulsifierFactor { get; set; }       // 0-1
+    public double EmulsionFactor { get; set; }          // multiplier
+    public double TemperatureFactor { get; set; }       // multiplier
+    public double FlowFactor { get; set; }              // multiplier
+}

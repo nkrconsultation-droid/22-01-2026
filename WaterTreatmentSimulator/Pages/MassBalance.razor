@@ -1,0 +1,464 @@
+@page "/massbalance"
+@inject SimulationService Sim
+@implements IDisposable
+
+<PageTitle>Mass Balance & Process Calculations</PageTitle>
+
+<div class="mass-balance-container">
+    <header class="page-header">
+        <h1>Mass Balance & Process Calculations</h1>
+        <div class="nav-links">
+            <a href="/" class="nav-btn">← Back to Simulator</a>
+            <span class="status @(Sim.IsRunning ? "running" : "stopped")">
+                @(Sim.IsRunning ? "SIMULATION RUNNING" : "SIMULATION STOPPED")
+            </span>
+        </div>
+    </header>
+
+    <div class="content-grid">
+        <!-- Left Column: Process Flow Diagram -->
+        <section class="section flow-section">
+            <h2>Process Flow Diagram</h2>
+            <div class="flow-diagram">
+                <!-- Feed Input -->
+                <div class="flow-node input-node">
+                    <div class="node-header">FEED INPUT</div>
+                    <div class="node-body">
+                        <div class="flow-value">
+                            <span class="label">Total Flow:</span>
+                            <span class="value highlight">@Sim.MassBalance.FeedFlowIn.ToString("F2") m³/h</span>
+                        </div>
+                        <div class="flow-value">
+                            <span class="label">Water:</span>
+                            <span class="value">@Sim.MassBalance.FeedWaterIn.ToString("F2") m³/h</span>
+                            <span class="percent">(@((Sim.FeedProps.WaterFraction * 100).ToString("F1"))%)</span>
+                        </div>
+                        <div class="flow-value">
+                            <span class="label">Oil:</span>
+                            <span class="value">@Sim.MassBalance.FeedOilIn.ToString("F2") m³/h</span>
+                            <span class="percent">(@((Sim.FeedProps.OilFraction * 100).ToString("F1"))%)</span>
+                        </div>
+                        <div class="flow-value">
+                            <span class="label">Solids:</span>
+                            <span class="value">@Sim.MassBalance.FeedSolidsIn.ToString("F2") m³/h</span>
+                            <span class="percent">(@((Sim.FeedProps.SolidsFraction * 100).ToString("F1"))%)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flow-arrow">→</div>
+
+                <!-- Heater -->
+                <div class="flow-node process-node">
+                    <div class="node-header">HEATER (TIC-001)</div>
+                    <div class="node-body">
+                        <div class="control-indicator @(Sim.TIC.Mode == "AUTO" ? "auto" : "manual")">
+                            @Sim.TIC.Mode
+                        </div>
+                        <div class="flow-value">
+                            <span class="label">SP:</span>
+                            <span class="value">@Sim.TIC.SP.ToString("F1") °C</span>
+                        </div>
+                        <div class="flow-value">
+                            <span class="label">PV:</span>
+                            <span class="value highlight">@Sim.TIC.PV.ToString("F1") °C</span>
+                        </div>
+                        <div class="flow-value">
+                            <span class="label">OP:</span>
+                            <span class="value">@Sim.TIC.OP.ToString("F1")%</span>
+                        </div>
+                        <div class="flow-value">
+                            <span class="label">Power:</span>
+                            <span class="value">@Sim.Process.HeaterPower.ToString("F1") kW</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flow-arrow">→</div>
+
+                <!-- Centrifuge -->
+                <div class="flow-node centrifuge-node">
+                    <div class="node-header">CENTRIFUGE</div>
+                    <div class="node-body">
+                        <div class="sub-controls">
+                            <div class="control-row">
+                                <span class="tag">FIC-001</span>
+                                <span class="control-indicator @(Sim.FIC.Mode == "AUTO" ? "auto" : "manual")">@Sim.FIC.Mode</span>
+                            </div>
+                            <div class="flow-value">
+                                <span class="label">Flow SP/PV:</span>
+                                <span class="value">@Sim.FIC.SP.ToString("F1") / @Sim.FIC.PV.ToString("F1") m³/h</span>
+                            </div>
+                            <div class="control-row">
+                                <span class="tag">SIC-001</span>
+                                <span class="control-indicator @(Sim.SIC.Mode == "AUTO" ? "auto" : "manual")">@Sim.SIC.Mode</span>
+                            </div>
+                            <div class="flow-value">
+                                <span class="label">Speed SP/PV:</span>
+                                <span class="value">@Sim.SIC.SP.ToString("F0") / @Sim.SIC.PV.ToString("F0") RPM</span>
+                            </div>
+                        </div>
+                        <div class="flow-value">
+                            <span class="label">G-Force:</span>
+                            <span class="value highlight">@Sim.Process.GForce.ToString("F0") G</span>
+                        </div>
+                        <div class="flow-value">
+                            <span class="label">Motor Power:</span>
+                            <span class="value">@Sim.Process.MotorPower.ToString("F1") kW</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Output Streams -->
+                <div class="output-streams">
+                    <div class="flow-arrow-down">↓</div>
+                    <div class="output-grid">
+                        <div class="flow-node output-node water">
+                            <div class="node-header">WATER OUTPUT</div>
+                            <div class="node-body">
+                                <div class="flow-value">
+                                    <span class="label">Flow:</span>
+                                    <span class="value highlight">@Sim.MassBalance.WaterFlowOut.ToString("F2") m³/h</span>
+                                </div>
+                                <div class="flow-value">
+                                    <span class="label">OiW:</span>
+                                    <span class="value @GetQualityClass(Sim.MassBalance.WaterOilContent)">@Sim.MassBalance.WaterOilContent.ToString("F0") ppm</span>
+                                </div>
+                                <div class="flow-value">
+                                    <span class="label">Oil Loss:</span>
+                                    <span class="value">@Sim.MassBalance.OilLostToWater.ToString("F3") m³/h</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flow-node output-node oil">
+                            <div class="node-header">OIL OUTPUT</div>
+                            <div class="node-body">
+                                <div class="flow-value">
+                                    <span class="label">Flow:</span>
+                                    <span class="value highlight">@Sim.MassBalance.OilFlowOut.ToString("F2") m³/h</span>
+                                </div>
+                                <div class="flow-value">
+                                    <span class="label">Recovery:</span>
+                                    <span class="value @GetEfficiencyClass(Sim.MassBalance.OilRecoveryRate)">@Sim.MassBalance.OilRecoveryRate.ToString("F1")%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flow-node output-node solids">
+                            <div class="node-header">SOLIDS OUTPUT</div>
+                            <div class="node-body">
+                                <div class="flow-value">
+                                    <span class="label">Flow:</span>
+                                    <span class="value highlight">@Sim.MassBalance.SolidsFlowOut.ToString("F2") m³/h</span>
+                                </div>
+                                <div class="flow-value">
+                                    <span class="label">Removal:</span>
+                                    <span class="value @GetEfficiencyClass(Sim.MassBalance.SolidsRemovalRate)">@Sim.MassBalance.SolidsRemovalRate.ToString("F1")%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mass Balance Summary -->
+            <div class="balance-summary">
+                <h3>Mass Balance Verification</h3>
+                <table class="balance-table">
+                    <tr>
+                        <th>Stream</th>
+                        <th>Flow (m³/h)</th>
+                        <th>% of Feed</th>
+                    </tr>
+                    <tr class="input-row">
+                        <td>Feed In</td>
+                        <td>@Sim.MassBalance.FeedFlowIn.ToString("F3")</td>
+                        <td>100.0%</td>
+                    </tr>
+                    <tr>
+                        <td>Water Out</td>
+                        <td>@Sim.MassBalance.WaterFlowOut.ToString("F3")</td>
+                        <td>@((Sim.MassBalance.WaterFlowOut / Math.Max(Sim.MassBalance.FeedFlowIn, 0.001) * 100).ToString("F1"))%</td>
+                    </tr>
+                    <tr>
+                        <td>Oil Out</td>
+                        <td>@Sim.MassBalance.OilFlowOut.ToString("F3")</td>
+                        <td>@((Sim.MassBalance.OilFlowOut / Math.Max(Sim.MassBalance.FeedFlowIn, 0.001) * 100).ToString("F1"))%</td>
+                    </tr>
+                    <tr>
+                        <td>Solids Out</td>
+                        <td>@Sim.MassBalance.SolidsFlowOut.ToString("F3")</td>
+                        <td>@((Sim.MassBalance.SolidsFlowOut / Math.Max(Sim.MassBalance.FeedFlowIn, 0.001) * 100).ToString("F1"))%</td>
+                    </tr>
+                    <tr class="total-row">
+                        <td>Total Out</td>
+                        <td>@Sim.MassBalance.TotalFlowOut.ToString("F3")</td>
+                        <td>@((Sim.MassBalance.TotalFlowOut / Math.Max(Sim.MassBalance.FeedFlowIn, 0.001) * 100).ToString("F1"))%</td>
+                    </tr>
+                    <tr class="error-row @(Math.Abs(Sim.MassBalance.MassBalanceError) < 1 ? "good" : "warning")">
+                        <td>Balance Error</td>
+                        <td colspan="2">@Sim.MassBalance.MassBalanceError.ToString("F3")%</td>
+                    </tr>
+                </table>
+            </div>
+        </section>
+
+        <!-- Right Column: Stokes Law Calculations -->
+        <section class="section stokes-section">
+            <h2>Stokes Law Separation Model</h2>
+
+            <div class="calc-group">
+                <h3>Centrifuge Geometry</h3>
+                <div class="calc-grid">
+                    <div class="calc-item">
+                        <span class="label">Bowl Radius (r):</span>
+                        <span class="value">@(Sim.StokesCalc.BowlRadius * 1000).ToString("F1") mm</span>
+                        <span class="formula">= D/2</span>
+                    </div>
+                    <div class="calc-item">
+                        <span class="label">Bowl Volume:</span>
+                        <span class="value">@Sim.StokesCalc.BowlVolume.ToString("F1") L</span>
+                        <span class="formula">= πr²L</span>
+                    </div>
+                    <div class="calc-item">
+                        <span class="label">Angular Velocity (ω):</span>
+                        <span class="value">@Sim.StokesCalc.AngularVelocity.ToString("F1") rad/s</span>
+                        <span class="formula">= 2πN/60</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="calc-group">
+                <h3>Centrifugal Force</h3>
+                <div class="calc-grid">
+                    <div class="calc-item highlight">
+                        <span class="label">Centrifugal Acceleration:</span>
+                        <span class="value">@Sim.StokesCalc.CentrifugalAcceleration.ToString("F0") m/s²</span>
+                        <span class="formula">a = ω²r</span>
+                    </div>
+                    <div class="calc-item highlight">
+                        <span class="label">G-Force:</span>
+                        <span class="value">@Sim.StokesCalc.GForce.ToString("F0") G</span>
+                        <span class="formula">= a / 9.81</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="calc-group">
+                <h3>Fluid Properties</h3>
+                <div class="calc-grid">
+                    <div class="calc-item">
+                        <span class="label">Water Density (adjusted):</span>
+                        <span class="value">@Sim.StokesCalc.WaterDensityAdjusted.ToString("F1") kg/m³</span>
+                        <span class="formula">ρw + salinity correction</span>
+                    </div>
+                    <div class="calc-item">
+                        <span class="label">Δρ (oil-water):</span>
+                        <span class="value">@Sim.StokesCalc.OilWaterDensityDiff.ToString("F1") kg/m³</span>
+                    </div>
+                    <div class="calc-item">
+                        <span class="label">Δρ (solids-water):</span>
+                        <span class="value">@Sim.StokesCalc.SolidsWaterDensityDiff.ToString("F1") kg/m³</span>
+                    </div>
+                    <div class="calc-item">
+                        <span class="label">Reference Viscosity (25°C):</span>
+                        <span class="value">@Sim.StokesCalc.ReferenceViscosity.ToString("F1") mPa·s</span>
+                    </div>
+                    <div class="calc-item">
+                        <span class="label">Temperature-Adjusted Viscosity:</span>
+                        <span class="value">@Sim.StokesCalc.TemperatureAdjustedViscosity.ToString("F2") mPa·s</span>
+                        <span class="formula">μ(T) = μ₀·exp(k·ΔT)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="calc-group">
+                <h3>Stokes Settling Velocity</h3>
+                <div class="stokes-formula">
+                    <span class="formula-box">v = (d² × Δρ × g) / (18 × μ)</span>
+                </div>
+                <div class="calc-grid">
+                    <div class="calc-item">
+                        <span class="label">Oil Droplet D50:</span>
+                        <span class="value">@Sim.StokesCalc.OilDropletDiameter.ToString("F0") μm</span>
+                    </div>
+                    <div class="calc-item highlight">
+                        <span class="label">Oil Settling Velocity:</span>
+                        <span class="value">@Sim.StokesCalc.OilSettlingVelocity.ToString("F3") mm/s</span>
+                    </div>
+                    <div class="calc-item">
+                        <span class="label">Solids D50:</span>
+                        <span class="value">@Sim.StokesCalc.SolidsDiameter.ToString("F0") μm</span>
+                    </div>
+                    <div class="calc-item highlight">
+                        <span class="label">Solids Settling Velocity:</span>
+                        <span class="value">@Sim.StokesCalc.SolidsSettlingVelocity.ToString("F3") mm/s</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="calc-group">
+                <h3>Separation Performance</h3>
+                <div class="calc-grid">
+                    <div class="calc-item">
+                        <span class="label">Residence Time:</span>
+                        <span class="value">@Sim.StokesCalc.ResidenceTime.ToString("F1") s</span>
+                        <span class="formula">τ = V / Q</span>
+                    </div>
+                    <div class="calc-item">
+                        <span class="label">Separation Distance:</span>
+                        <span class="value">@Sim.StokesCalc.SeparationDistance.ToString("F1") mm</span>
+                    </div>
+                    <div class="calc-item">
+                        <span class="label">Oil Separation Ratio:</span>
+                        <span class="value">@Sim.StokesCalc.OilSeparationRatio.ToString("F2")</span>
+                        <span class="formula">(v×τ)/d > 1 for separation</span>
+                    </div>
+                    <div class="calc-item">
+                        <span class="label">Solids Separation Ratio:</span>
+                        <span class="value">@Sim.StokesCalc.SolidsSeparationRatio.ToString("F2")</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="calc-group">
+                <h3>Efficiency Calculations</h3>
+                <div class="calc-grid">
+                    <div class="calc-item">
+                        <span class="label">Base Oil Efficiency:</span>
+                        <span class="value">@Sim.StokesCalc.BaseOilEfficiency.ToString("F1")%</span>
+                        <span class="formula">Logistic curve</span>
+                    </div>
+                    <div class="calc-item">
+                        <span class="label">Base Solids Efficiency:</span>
+                        <span class="value">@Sim.StokesCalc.BaseSolidsEfficiency.ToString("F1")%</span>
+                    </div>
+                </div>
+                <h4>Process Modifiers</h4>
+                <div class="calc-grid modifiers">
+                    <div class="calc-item">
+                        <span class="label">Demulsifier Effect:</span>
+                        <span class="value">@Sim.StokesCalc.DemulsifierFactor.ToString("F2")</span>
+                    </div>
+                    <div class="calc-item">
+                        <span class="label">Emulsion Factor:</span>
+                        <span class="value">×@Sim.StokesCalc.EmulsionFactor.ToString("F3")</span>
+                    </div>
+                    <div class="calc-item">
+                        <span class="label">Temperature Factor:</span>
+                        <span class="value">×@Sim.StokesCalc.TemperatureFactor.ToString("F3")</span>
+                    </div>
+                    <div class="calc-item">
+                        <span class="label">Flow Factor:</span>
+                        <span class="value">×@Sim.StokesCalc.FlowFactor.ToString("F3")</span>
+                    </div>
+                </div>
+                <div class="final-efficiency">
+                    <div class="eff-item @GetEfficiencyClass(Sim.Process.OilEfficiency)">
+                        <span class="label">Final Oil Efficiency:</span>
+                        <span class="value">@Sim.Process.OilEfficiency.ToString("F1")%</span>
+                    </div>
+                    <div class="eff-item @GetEfficiencyClass(Sim.Process.SolidsEfficiency)">
+                        <span class="label">Final Solids Efficiency:</span>
+                        <span class="value">@Sim.Process.SolidsEfficiency.ToString("F1")%</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Control Loops Detail Section -->
+    <section class="section control-section">
+        <h2>PID Control Loops - Detailed View</h2>
+        <div class="control-detail-grid">
+            @foreach (var loop in Sim.ControlLoops)
+            {
+                <div class="control-detail-card">
+                    <div class="card-header @(loop.Mode == "AUTO" ? "auto" : "manual")">
+                        <span class="tag">@loop.Tag</span>
+                        <span class="description">@loop.Description</span>
+                        <span class="mode-badge">@loop.Mode</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="pv-sp-display">
+                            <div class="gauge">
+                                <div class="gauge-label">PV</div>
+                                <div class="gauge-value">@loop.PV.ToString("F1")</div>
+                                <div class="gauge-unit">@loop.Unit</div>
+                            </div>
+                            <div class="deviation @GetDeviationClass(loop.PV, loop.SP)">
+                                @if (loop.PV > loop.SP)
+                                {
+                                    <span>+@((loop.PV - loop.SP).ToString("F1"))</span>
+                                }
+                                else
+                                {
+                                    <span>@((loop.PV - loop.SP).ToString("F1"))</span>
+                                }
+                            </div>
+                            <div class="gauge">
+                                <div class="gauge-label">SP</div>
+                                <div class="gauge-value">@loop.SP.ToString("F1")</div>
+                                <div class="gauge-unit">@loop.Unit</div>
+                            </div>
+                        </div>
+                        <div class="output-display">
+                            <span class="label">Output:</span>
+                            <div class="output-bar">
+                                <div class="bar-fill" style="width: @loop.OP%"></div>
+                            </div>
+                            <span class="value">@loop.OP.ToString("F1")%</span>
+                        </div>
+                        <div class="pid-params">
+                            <span class="param">Kp: @loop.Kp.ToString("F2")</span>
+                            <span class="param">Ki: @loop.Ki.ToString("F2")</span>
+                            <span class="param">Kd: @loop.Kd.ToString("F2")</span>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private System.Threading.Timer? _refreshTimer;
+
+    protected override void OnInitialized()
+    {
+        Sim.OnStateChanged += HandleStateChanged;
+
+        _refreshTimer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(StateHasChanged);
+        }, null, 0, 100);
+    }
+
+    private void HandleStateChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private string GetEfficiencyClass(double value)
+    {
+        return value >= 90 ? "good" : value >= 80 ? "warning" : "bad";
+    }
+
+    private string GetQualityClass(double ppm)
+    {
+        return ppm <= 50 ? "good" : ppm <= 100 ? "warning" : "bad";
+    }
+
+    private string GetDeviationClass(double pv, double sp)
+    {
+        var dev = Math.Abs(pv - sp) / Math.Max(sp, 1) * 100;
+        return dev <= 2 ? "good" : dev <= 5 ? "warning" : "bad";
+    }
+
+    public void Dispose()
+    {
+        Sim.OnStateChanged -= HandleStateChanged;
+        _refreshTimer?.Dispose();
+    }
+}
